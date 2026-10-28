@@ -1,0 +1,9 @@
+{
+  // Build-only config: compiles just `src/` into `dist/`, leaving tests out of the package.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "noEmit": false
+  },
+  "include": ["src"]
+}
