@@ -1,3 +1,4 @@
+import { createHttpError } from "./error-response.js";
 import { parseJson } from "./response.js";
 
 import type { ClientOptions, RequestOptions } from "./types.js";
@@ -19,6 +20,10 @@ export function createClient(options: ClientOptions) {
     }
 
     const response = await fetch(url, init);
+
+    if (!response.ok) {
+      throw await createHttpError(response);
+    }
 
     return parseJson<T>(response);
   }
