@@ -1,7 +1,9 @@
+import { parseJson } from "./response.js";
+
 import type { ClientOptions, RequestOptions } from "./types.js";
 
 export function createClient(options: ClientOptions) {
-  async function request(path: string, requestOptions: RequestOptions): Promise<Response> {
+  async function request<T>(path: string, requestOptions: RequestOptions): Promise<T> {
     const url = `${options.baseUrl}${path}`;
 
     const init: RequestInit = {
@@ -16,50 +18,65 @@ export function createClient(options: ClientOptions) {
       init.body = requestOptions.body;
     }
 
-    return fetch(url, init);
+    const response = await fetch(url, init);
+
+    return parseJson<T>(response);
   }
 
-  function get(path: string, headers?: Record<string, string>): Promise<Response> {
-    return request(path, {
+  function get<T>(path: string, headers?: Record<string, string>): Promise<T> {
+    return request<T>(path, {
       method: "GET",
       ...(headers !== undefined ? { headers } : {}),
     });
   }
 
-  function post(
+  function post<TBody, TResponse>(
     path: string,
-    body?: BodyInit,
+    body: TBody,
     headers?: Record<string, string>,
-  ): Promise<Response> {
-    return request(path, {
+  ): Promise<TResponse> {
+    return request<TResponse>(path, {
       method: "POST",
-      ...(body !== undefined ? { body } : {}),
-      ...(headers !== undefined ? { headers } : {}),
+      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
     });
   }
 
-  function put(path: string, body?: BodyInit, headers?: Record<string, string>): Promise<Response> {
-    return request(path, {
-      method: "PUT",
-      ...(body !== undefined ? { body } : {}),
-      ...(headers !== undefined ? { headers } : {}),
-    });
-  }
-
-  function patch(
+  function put<TBody, TResponse>(
     path: string,
-    body?: BodyInit,
+    body: TBody,
     headers?: Record<string, string>,
-  ): Promise<Response> {
-    return request(path, {
-      method: "PATCH",
-      ...(body !== undefined ? { body } : {}),
-      ...(headers !== undefined ? { headers } : {}),
+  ): Promise<TResponse> {
+    return request<TResponse>(path, {
+      method: "PUT",
+      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
     });
   }
 
-  function remove(path: string, headers?: Record<string, string>): Promise<Response> {
-    return request(path, {
+  function patch<TBody, TResponse>(
+    path: string,
+    body: TBody,
+    headers?: Record<string, string>,
+  ): Promise<TResponse> {
+    return request<TResponse>(path, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
+    });
+  }
+
+  function remove<T>(path: string, headers?: Record<string, string>): Promise<T> {
+    return request<T>(path, {
       method: "DELETE",
       ...(headers !== undefined ? { headers } : {}),
     });
