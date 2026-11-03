@@ -4,10 +4,17 @@ export type QueryValue = string | number | boolean | null | undefined;
 
 export type QueryParams = Record<string, QueryValue>;
 
+export interface RetryOptions {
+  maxRetries?: number;
+  baseDelay?: number;
+  maxDelay?: number;
+}
+
 export interface ClientOptions {
   baseUrl: string;
   headers?: Record<string, string>;
   timeout?: number;
+  retry?: RetryOptions;
 }
 
 export interface RequestConfig {
@@ -15,6 +22,7 @@ export interface RequestConfig {
   query?: QueryParams;
   timeout?: number;
   signal?: AbortSignal;
+  retry?: RetryOptions | false;
 }
 
 export interface RequestOptions extends RequestConfig {
