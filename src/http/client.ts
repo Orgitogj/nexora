@@ -1,22 +1,32 @@
 import { createHttpError } from "./error-response.js";
+import { mergeHeaders } from "./headers.js";
 import { parseJson } from "./response.js";
+import { createRequestSignal } from "./timeout.js";
+import { buildUrl } from "./url.js";
 
-import type { ClientOptions, RequestOptions } from "./types.js";
+import type { ClientOptions, RequestConfig, RequestOptions } from "./types.js";
 
 export function createClient(options: ClientOptions) {
   async function request<T>(path: string, requestOptions: RequestOptions): Promise<T> {
-    const url = `${options.baseUrl}${path}`;
+    const url = buildUrl(options.baseUrl, path, requestOptions.query);
+
+    const headers = mergeHeaders(options.headers, requestOptions.headers);
+
+    const timeout = requestOptions.timeout ?? options.timeout;
+
+    const signal = createRequestSignal(timeout, requestOptions.signal);
 
     const init: RequestInit = {
       method: requestOptions.method,
+      headers,
     };
-
-    if (requestOptions.headers !== undefined) {
-      init.headers = requestOptions.headers;
-    }
 
     if (requestOptions.body !== undefined) {
       init.body = requestOptions.body;
+    }
+
+    if (signal !== undefined) {
+      init.signal = signal;
     }
 
     const response = await fetch(url, init);
@@ -28,24 +38,25 @@ export function createClient(options: ClientOptions) {
     return parseJson<T>(response);
   }
 
-  function get<T>(path: string, headers?: Record<string, string>): Promise<T> {
+  function get<T>(path: string, config: RequestConfig = {}): Promise<T> {
     return request<T>(path, {
+      ...config,
       method: "GET",
-      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
   function post<TBody, TResponse>(
     path: string,
     body: TBody,
-    headers?: Record<string, string>,
+    config: RequestConfig = {},
   ): Promise<TResponse> {
     return request<TResponse>(path, {
+      ...config,
       method: "POST",
       body: JSON.stringify(body),
       headers: {
         "Content-Type": "application/json",
-        ...headers,
+        ...config.headers,
       },
     });
   }
@@ -53,14 +64,15 @@ export function createClient(options: ClientOptions) {
   function put<TBody, TResponse>(
     path: string,
     body: TBody,
-    headers?: Record<string, string>,
+    config: RequestConfig = {},
   ): Promise<TResponse> {
     return request<TResponse>(path, {
+      ...config,
       method: "PUT",
       body: JSON.stringify(body),
       headers: {
         "Content-Type": "application/json",
-        ...headers,
+        ...config.headers,
       },
     });
   }
@@ -68,22 +80,23 @@ export function createClient(options: ClientOptions) {
   function patch<TBody, TResponse>(
     path: string,
     body: TBody,
-    headers?: Record<string, string>,
+    config: RequestConfig = {},
   ): Promise<TResponse> {
     return request<TResponse>(path, {
+      ...config,
       method: "PATCH",
       body: JSON.stringify(body),
       headers: {
         "Content-Type": "application/json",
-        ...headers,
+        ...config.headers,
       },
     });
   }
 
-  function remove<T>(path: string, headers?: Record<string, string>): Promise<T> {
+  function remove<T>(path: string, config: RequestConfig = {}): Promise<T> {
     return request<T>(path, {
+      ...config,
       method: "DELETE",
-      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
