@@ -9,6 +9,7 @@ export type {
   QueryValue,
   RequestConfig,
   RequestOptions,
+  RetryOptions,
 } from "./http/types.js";
 
 export type { NexoraErrorOptions } from "./http/errors.js";

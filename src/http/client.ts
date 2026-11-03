@@ -1,6 +1,7 @@
 import { createHttpError } from "./error-response.js";
 import { mergeHeaders } from "./headers.js";
 import { parseJson } from "./response.js";
+import { fetchWithRetry } from "./retry.js";
 import { createRequestSignal } from "./timeout.js";
 import { buildUrl } from "./url.js";
 
@@ -29,7 +30,15 @@ export function createClient(options: ClientOptions) {
       init.signal = signal;
     }
 
-    const response = await fetch(url, init);
+    const retryOptions =
+      requestOptions.retry === false
+        ? { maxRetries: 0 }
+        : {
+            ...options.retry,
+            ...requestOptions.retry,
+          };
+
+    const response = await fetchWithRetry(url, init, requestOptions.method, retryOptions);
 
     if (!response.ok) {
       throw await createHttpError(response);
