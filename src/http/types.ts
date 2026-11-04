@@ -1,3 +1,5 @@
+﻿import type { ResponseValidator } from "./response-validator.js";
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type QueryValue = string | number | boolean | null | undefined;
@@ -24,6 +26,7 @@ export interface ClientOptions {
 }
 
 export interface RequestConfig {
+  validate?: ResponseValidator<unknown>;
   headers?: Record<string, string>;
   query?: QueryParams;
   timeout?: number;
