@@ -1,4 +1,4 @@
-import { applyBearerToken, getAccessToken } from "./auth.js";
+﻿import { applyBearerToken, getAccessToken } from "./auth.js";
 import { shouldRefreshToken } from "./auth-policy.js";
 import { createHttpError } from "./error-response.js";
 import { mergeHeaders } from "./headers.js";
@@ -116,6 +116,14 @@ export function createClient(options: ClientOptions) {
 
     if (!response.ok) {
       throw await createHttpError(response);
+    }
+
+    const validator = requestOptions.validate;
+
+    if (validator !== undefined) {
+      return parseJson<T>(response, {
+        validate: validator as (value: unknown) => T,
+      });
     }
 
     return parseJson<T>(response);
