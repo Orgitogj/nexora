@@ -25,8 +25,8 @@ export interface ClientOptions {
   auth?: AuthOptions;
 }
 
-export interface RequestConfig {
-  validate?: ResponseValidator<unknown>;
+export interface RequestConfig<T = unknown> {
+  validate?: ResponseValidator<T>;
   headers?: Record<string, string>;
   query?: QueryParams;
   timeout?: number;
@@ -35,7 +35,7 @@ export interface RequestConfig {
   auth?: boolean;
 }
 
-export interface RequestOptions extends RequestConfig {
+export interface RequestOptions<T = unknown> extends RequestConfig<T> {
   method: HttpMethod;
   body?: BodyInit;
 }
