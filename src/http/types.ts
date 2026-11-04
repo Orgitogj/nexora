@@ -10,11 +10,17 @@ export interface RetryOptions {
   maxDelay?: number;
 }
 
+export interface AuthOptions {
+  getToken: () => string | null | Promise<string | null>;
+  refreshToken?: () => Promise<string | null>;
+}
+
 export interface ClientOptions {
   baseUrl: string;
   headers?: Record<string, string>;
   timeout?: number;
   retry?: RetryOptions;
+  auth?: AuthOptions;
 }
 
 export interface RequestConfig {
@@ -23,6 +29,7 @@ export interface RequestConfig {
   timeout?: number;
   signal?: AbortSignal;
   retry?: RetryOptions | false;
+  auth?: boolean;
 }
 
 export interface RequestOptions extends RequestConfig {
