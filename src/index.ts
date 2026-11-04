@@ -3,6 +3,7 @@ export { NexoraError } from "./http/errors.js";
 export { parseJson } from "./http/response.js";
 
 export type {
+  AuthOptions,
   ClientOptions,
   HttpMethod,
   QueryParams,
