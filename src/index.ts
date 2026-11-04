@@ -17,3 +17,12 @@ export type { NexoraErrorOptions } from "./http/errors.js";
 
 export { NexoraResponseError } from "./http/response-errors.js";
 export type { ResponseValidator, ResponseOptions } from "./http/response-validator.js";
+
+export type {
+  InterceptorManager,
+  RequestInterceptorContext,
+  RequestInterceptor,
+  ResponseInterceptor,
+  ErrorInterceptor,
+  MaybePromise,
+} from "./http/interceptor-types.js";
