@@ -1,9 +1,8 @@
 ﻿import type { ResponseValidator } from "./response-validator.js";
+import type { CacheOptions, CacheRequestOptions } from "./cache-types.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-
 export type QueryValue = string | number | boolean | null | undefined;
-
 export type QueryParams = Record<string, QueryValue>;
 
 export interface RetryOptions {
@@ -23,16 +22,18 @@ export interface ClientOptions {
   timeout?: number;
   retry?: RetryOptions;
   auth?: AuthOptions;
+  cache?: CacheOptions;
 }
 
 export interface RequestConfig<T = unknown> {
-  validate?: ResponseValidator<T>;
   headers?: Record<string, string>;
   query?: QueryParams;
   timeout?: number;
   signal?: AbortSignal;
   retry?: RetryOptions | false;
   auth?: boolean;
+  validate?: ResponseValidator<T>;
+  cache?: CacheRequestOptions | false;
 }
 
 export interface RequestOptions<T = unknown> extends RequestConfig<T> {

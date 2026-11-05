@@ -26,3 +26,13 @@ export type {
   ErrorInterceptor,
   MaybePromise,
 } from "./http/interceptor-types.js";
+export { NexoraCacheMissError } from "./http/cache-errors.js";
+export { createMemoryCache } from "./http/cache-store.js";
+export { createCacheKey } from "./http/cache-key.js";
+export type {
+  CachePolicy,
+  CacheOptions,
+  CacheRequestOptions,
+  CacheStore,
+} from "./http/cache-types.js";
+export type { CacheController } from "./http/cache.js";
