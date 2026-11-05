@@ -23,6 +23,8 @@ export interface ClientOptions {
   retry?: RetryOptions;
   auth?: AuthOptions;
   cache?: CacheOptions;
+  /** Opt-in sharing of concurrent anonymous GET requests. */
+  deduplication?: boolean;
 }
 
 export interface RequestConfig<T = unknown> {
@@ -34,6 +36,8 @@ export interface RequestConfig<T = unknown> {
   auth?: boolean;
   validate?: ResponseValidator<T>;
   cache?: CacheRequestOptions | false;
+  /** Overrides the client-level deduplication setting. */
+  deduplication?: boolean;
 }
 
 export interface RequestOptions<T = unknown> extends RequestConfig<T> {
