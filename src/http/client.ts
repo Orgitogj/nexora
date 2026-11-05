@@ -4,6 +4,8 @@ import { createCacheController } from "./cache.js";
 import { createCacheKey } from "./cache-key.js";
 import { resolveCacheOptions } from "./cache-policy.js";
 import { NexoraCacheMissError } from "./cache-errors.js";
+import { createDeduplicator } from "./deduplication.js";
+import { createDeduplicationKey } from "./deduplication-key.js";
 import { createHttpError } from "./error-response.js";
 import { mergeHeaders } from "./headers.js";
 import { createInterceptors } from "./interceptors.js";
@@ -17,6 +19,7 @@ import type { ClientOptions, RequestConfig, RequestOptions } from "./types.js";
 export function createClient(options: ClientOptions) {
   const interceptors = createInterceptors();
   const cacheState = createCacheController();
+  const deduplicator = createDeduplicator();
   const tokenRefresher = options.auth !== undefined ? createTokenRefresher(options.auth) : null;
 
   async function request<T>(path: string, requestOptions: RequestOptions<T>): Promise<T> {
@@ -141,10 +144,33 @@ export function createClient(options: ClientOptions) {
           : parseJson<T>(response, { validate: validator });
       };
 
+      // Conservative sharing: only anonymous GETs without caller-specific
+      // cancellation, timeout, validation, or credentials are eligible.
+      const dedupEnabled = requestOptions.deduplication ?? options.deduplication ?? false;
+      const canDeduplicate =
+        dedupEnabled &&
+        requestOptions.method === "GET" &&
+        context.init.method?.toUpperCase() === "GET" &&
+        context.init.body === undefined &&
+        !authEnabled &&
+        !finalHeaders.has("authorization") &&
+        !finalHeaders.has("cookie") &&
+        context.init.credentials !== "include" &&
+        context.init.credentials !== "same-origin" &&
+        finalSignal === undefined &&
+        timeout === undefined &&
+        requestOptions.validate === undefined;
+      const dedupKey = createDeduplicationKey(context.url, finalHeaders, {
+        retry: retryOptions,
+        cache: cacheOptions,
+      });
+      const runNetwork = (): Promise<T> =>
+        canDeduplicate ? deduplicator.run(dedupKey, fetchAndParse) : fetchAndParse();
+
       let result: T;
       if (canCache && cacheOptions.policy === "network-first") {
         try {
-          result = await fetchAndParse();
+          result = await runNetwork();
         } catch (error) {
           // Only transport failures can fall back to cached data.
           // Do not hide HTTP, validation, auth, or abort errors.
@@ -158,7 +184,7 @@ export function createClient(options: ClientOptions) {
           throw error;
         }
       } else {
-        result = await fetchAndParse();
+        result = await runNetwork();
       }
 
       finalSignal?.throwIfAborted();
