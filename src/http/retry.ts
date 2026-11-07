@@ -66,6 +66,21 @@ function wait(delay: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+function getRetryAfterDelay(response: Response): number | undefined {
+  const value = response.headers.get("Retry-After");
+  if (value === null) return undefined;
+
+  const seconds = Number(value.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
+}
+
+function isReplayableBody(body: BodyInit | null | undefined): boolean {
+  return body === null || body === undefined || typeof body !== "object" || !("getReader" in body);
+}
+
 export async function fetchWithRetry(
   url: string,
   init: RequestInit,
@@ -74,7 +89,7 @@ export async function fetchWithRetry(
 ): Promise<Response> {
   const config = resolveRetryOptions(options);
 
-  if (!isRetryableMethod(method)) {
+  if (!isRetryableMethod(method) || !isReplayableBody(init.body)) {
     return fetch(url, init);
   }
 
@@ -87,7 +102,8 @@ export async function fetchWithRetry(
 
     await response.body?.cancel();
 
-    const delay = calculateBackoff(attempt, config.baseDelay, config.maxDelay);
+    const delay =
+      getRetryAfterDelay(response) ?? calculateBackoff(attempt, config.baseDelay, config.maxDelay);
 
     await wait(delay, init.signal ?? undefined);
   }
