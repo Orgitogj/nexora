@@ -19,16 +19,17 @@ export interface AuthOptions {
 export interface ClientOptions {
   baseUrl: string;
   headers?: Record<string, string>;
+  credentials?: RequestCredentials;
   timeout?: number;
   retry?: RetryOptions;
   auth?: AuthOptions;
   cache?: CacheOptions;
-  /** Opt-in sharing of concurrent anonymous GET requests. */
   deduplication?: boolean;
 }
 
 export interface RequestConfig<T = unknown> {
   headers?: Record<string, string>;
+  credentials?: RequestCredentials;
   query?: QueryParams;
   timeout?: number;
   signal?: AbortSignal;
@@ -36,7 +37,6 @@ export interface RequestConfig<T = unknown> {
   auth?: boolean;
   validate?: ResponseValidator<T>;
   cache?: CacheRequestOptions | false;
-  /** Overrides the client-level deduplication setting. */
   deduplication?: boolean;
 }
 

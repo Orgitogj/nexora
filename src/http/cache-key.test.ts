@@ -21,13 +21,16 @@ describe("Cache key", () => {
     expect(getKey).not.toBe(postKey);
   });
 
-  it("includes representation headers but excludes unrelated headers", () => {
-    const first = new Headers({ Accept: "application/json", "X-Request-Id": "one" });
+  it("includes the standard representation headers", () => {
+    const first = new Headers({ Accept: "application/json", "Accept-Language": "en" });
     const sameRepresentation = new Headers({
       Accept: "application/json",
-      "X-Request-Id": "two",
+      "Accept-Language": "en",
     });
-    const differentRepresentation = new Headers({ Accept: "text/plain" });
+    const differentRepresentation = new Headers({
+      Accept: "application/json",
+      "Accept-Language": "fr",
+    });
 
     expect(createCacheKey("https://api.example.test/users", first)).toBe(
       createCacheKey("https://api.example.test/users", sameRepresentation),

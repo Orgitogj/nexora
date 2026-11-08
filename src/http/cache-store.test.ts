@@ -4,6 +4,7 @@ import { createMemoryCache } from "./cache-store.js";
 describe("createMemoryCache", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("stores and retrieves values", () => {
@@ -71,6 +72,25 @@ describe("createMemoryCache", () => {
     expect(cache.get("user")).toEqual({
       profile: { name: "Alex" },
     });
+  });
+
+  it("clones common cache values when structuredClone is unavailable", () => {
+    vi.stubGlobal("structuredClone", undefined);
+    const cache = createMemoryCache();
+    const value: { date: Date; tags: Set<string>; self?: unknown } = {
+      date: new Date("2026-11-07T12:00:00Z"),
+      tags: new Set(["mobile"]),
+    };
+    value.self = value;
+
+    cache.set("profile", value, 5_000);
+    value.date.setUTCFullYear(2000);
+    value.tags.add("changed");
+
+    const retrieved = cache.get<typeof value>("profile");
+    expect(retrieved?.date.toISOString()).toBe("2026-11-07T12:00:00.000Z");
+    expect(retrieved?.tags).toEqual(new Set(["mobile"]));
+    expect(retrieved?.self).toBe(retrieved);
   });
 
   it("deletes entries and reports whether deletion succeeded", () => {
