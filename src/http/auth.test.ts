@@ -123,4 +123,20 @@ describe("Authentication", () => {
 
     await expect(client.get("/private")).rejects.toThrow("Unable to refresh access token");
   });
+
+  it("does not refresh repeatedly when the retried request is still unauthorized", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(jsonResponse({ error: "unauthorized" }, 401)));
+    const refreshToken = vi.fn(() => Promise.resolve("new-token"));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      auth: { getToken: () => "old-token", refreshToken },
+      retry: { maxRetries: 0 },
+    });
+
+    await expect(client.get("/private")).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refreshToken).toHaveBeenCalledOnce();
+  });
 });

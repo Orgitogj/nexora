@@ -94,4 +94,49 @@ describe("Interceptors", () => {
 
     expect(handler).not.toHaveBeenCalled();
   });
+
+  it("uses a handler snapshot when interceptors change during execution", async () => {
+    const interceptors = createInterceptors();
+    const calls: string[] = [];
+    let secondId = -1;
+    interceptors.request.use((context) => {
+      calls.push("first");
+      interceptors.request.eject(secondId);
+      interceptors.request.use((nextContext) => {
+        calls.push("third");
+        return nextContext;
+      });
+      return context;
+    });
+    secondId = interceptors.request.use((context) => {
+      calls.push("second");
+      return context;
+    });
+
+    const context = { url: "https://api.example.test", init: {} };
+    await interceptors.request.run(context);
+    expect(calls).toEqual(["first", "second"]);
+
+    calls.length = 0;
+    await interceptors.request.run(context);
+    expect(calls).toEqual(["first", "third"]);
+  });
+
+  it("awaits asynchronous interceptors in registration order", async () => {
+    const interceptors = createInterceptors();
+    const calls: string[] = [];
+    interceptors.request.use(async (context) => {
+      await Promise.resolve();
+      calls.push("first");
+      return context;
+    });
+    interceptors.request.use((context) => {
+      calls.push("second");
+      return context;
+    });
+
+    await interceptors.request.run({ url: "https://api.example.test", init: {} });
+
+    expect(calls).toEqual(["first", "second"]);
+  });
 });
