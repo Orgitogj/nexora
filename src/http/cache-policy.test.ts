@@ -173,14 +173,11 @@ describe("Cache policy", () => {
   });
 
   it("does not store a no-store response when a response interceptor removes the directive", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
-      Promise.resolve(
-        jsonResponse(
-          { id: fetchMock.mock.calls.length },
-          { headers: { "Cache-Control": "no-store" } },
-        ),
-      ),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ id: 1 }, { headers: { "Cache-Control": "no-store" } })),
+      );
     const client = createClient({
       baseUrl: "https://api.example.test",
       cache: { enabled: true },
@@ -279,6 +276,28 @@ describe("Cache policy", () => {
     await expect(client.get("/users/1", { cache: { policy: "network-first" } })).resolves.toEqual({
       id: 1,
     });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not use stale data when a response interceptor throws a TypeError", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(jsonResponse({ id: 1 })));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+      retry: { maxRetries: 0 },
+    });
+
+    await client.get("/users/1");
+    client.interceptors.response.use(() => {
+      throw new TypeError("response interceptor failed");
+    });
+
+    await expect(client.get("/users/1", { cache: { policy: "network-first" } })).rejects.toThrow(
+      "response interceptor failed",
+    );
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

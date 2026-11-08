@@ -21,6 +21,13 @@ import { createRequestSignal, throwIfAborted } from "./timeout.js";
 import { buildUrl } from "./url.js";
 import type { ClientOptions, RequestConfig, RequestOptions } from "./types.js";
 
+class TransportFailure extends Error {
+  constructor(readonly error: TypeError) {
+    super(error.message);
+    this.name = "TransportFailure";
+  }
+}
+
 export function createClient(options: ClientOptions) {
   const interceptors = createInterceptors();
   const cacheState = createCacheController();
@@ -118,12 +125,22 @@ export function createClient(options: ClientOptions) {
           options.auth?.refreshToken !== undefined &&
           tokenRefresher !== null &&
           canReplayBody;
-        let response = await fetchWithRetry(
-          context.url,
-          context.init,
-          requestOptions.method,
-          retryOptions,
-        );
+        const fetchResponse = async (fetchInit: RequestInit): Promise<Response> => {
+          try {
+            return await fetchWithRetry(
+              context.url,
+              fetchInit,
+              requestOptions.method,
+              retryOptions,
+            );
+          } catch (error) {
+            if (error instanceof TypeError && !fetchInit.signal?.aborted) {
+              throw new TransportFailure(error);
+            }
+            throw error;
+          }
+        };
+        let response = await fetchResponse(context.init);
         const needsRefresh = shouldRefreshToken(
           response.status,
           canRefresh,
@@ -187,11 +204,13 @@ export function createClient(options: ClientOptions) {
           result = await runNetwork();
         } catch (error) {
           if (
-            error instanceof TypeError &&
+            error instanceof TransportFailure &&
             !finalSignal?.aborted &&
             cacheState.store.has(cacheKey)
           ) {
             result = { value: await cacheState.read<T>(cacheKey), cacheable: false };
+          } else if (error instanceof TransportFailure) {
+            throw error.error;
           } else {
             throw error;
           }
@@ -206,7 +225,7 @@ export function createClient(options: ClientOptions) {
       }
       return result.value;
     } catch (error) {
-      throw await interceptors.error.run(error);
+      throw await interceptors.error.run(error instanceof TransportFailure ? error.error : error);
     } finally {
       disposeRequestSignal?.();
     }
