@@ -109,6 +109,23 @@ describe("HTTP client", () => {
     await expect(client.get("/offline")).rejects.toBe(networkError);
   });
 
+  it("uses the interceptor's effective method to decide whether to retry", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(new Response(null, { status: 503 })));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      retry: { maxRetries: 3, baseDelay: 0 },
+    });
+    client.interceptors.request.use(({ init, ...context }) => ({
+      ...context,
+      init: { ...init, method: "POST", body: "payload" },
+    }));
+
+    await expect(client.get("/write")).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("rejects non-JSON success responses with a descriptive error", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("plain text", { headers: { "Content-Type": "text/plain" } }),
