@@ -16,7 +16,7 @@ export default defineConfig(
   },
   {
     // Config files like this one are plain JS and not part of tsconfig.json.
-    files: ["**/*.js"],
+    files: ["**/*.js", "**/*.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
   },
 );
