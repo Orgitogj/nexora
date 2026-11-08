@@ -1,4 +1,3 @@
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryCache } from "./cache-store.js";
 
@@ -48,14 +47,11 @@ describe("createMemoryCache", () => {
     expect(cache.get("user")).toBeUndefined();
   });
 
-  it.each([NaN, Infinity, -Infinity, -1])(
-    "throws RangeError for invalid TTL: %s",
-    (ttl) => {
-      const cache = createMemoryCache();
+  it.each([NaN, Infinity, -Infinity, -1])("throws RangeError for invalid TTL: %s", (ttl) => {
+    const cache = createMemoryCache();
 
-      expect(() => cache.set("user", { id: 1 }, ttl)).toThrow(RangeError);
-    },
-  );
+    expect(() => cache.set("user", { id: 1 }, ttl)).toThrow(RangeError);
+  });
 
   it("clones values when storing and retrieving them", () => {
     const cache = createMemoryCache();
