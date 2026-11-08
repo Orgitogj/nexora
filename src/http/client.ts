@@ -149,6 +149,7 @@ export function createClient(options: ClientOptions) {
             retryOptions,
           );
         }
+        const serverResponseCacheable = isCacheableResponse(response);
         response = await interceptors.response.run(response);
         if (!response.ok) throw await createHttpError(response);
         const validator = requestOptions.validate;
@@ -156,7 +157,7 @@ export function createClient(options: ClientOptions) {
           validator === undefined
             ? await parseJson<T>(response)
             : await parseJson<T>(response, { validate: validator });
-        return { value, cacheable: isCacheableResponse(response) };
+        return { value, cacheable: serverResponseCacheable && isCacheableResponse(response) };
       };
 
       const dedupEnabled = requestOptions.deduplication ?? options.deduplication ?? false;

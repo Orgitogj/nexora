@@ -172,6 +172,37 @@ describe("Cache policy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
+  it("does not store a no-store response when a response interceptor removes the directive", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse(
+          { id: fetchMock.mock.calls.length },
+          { headers: { "Cache-Control": "no-store" } },
+        ),
+      ),
+    );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+    client.interceptors.response.use(async (response) => {
+      const body = await response.text();
+      const headers = new Headers(response.headers);
+      headers.delete("Cache-Control");
+      return new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    });
+
+    await client.get("/users");
+    await client.get("/users");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("does not cache partial content as a complete representation", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
