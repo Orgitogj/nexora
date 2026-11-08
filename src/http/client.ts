@@ -1,7 +1,12 @@
 ﻿import { applyBearerToken, getAccessToken } from "./auth.js";
 import { shouldRefreshToken } from "./auth-policy.js";
 import { createCacheController } from "./cache.js";
-import { createCacheKey } from "./cache-key.js";
+import {
+  createCacheKey,
+  hasNoStoreDirective,
+  hasUnsupportedCacheHeaders,
+  isCacheableResponse,
+} from "./cache-key.js";
 import { resolveCacheOptions } from "./cache-policy.js";
 import { NexoraCacheMissError } from "./cache-errors.js";
 import { createDeduplicator } from "./deduplication.js";
@@ -12,7 +17,7 @@ import { createInterceptors } from "./interceptors.js";
 import { parseJson } from "./response.js";
 import { fetchWithRetry } from "./retry.js";
 import { createTokenRefresher } from "./token-refresh.js";
-import { createRequestSignal } from "./timeout.js";
+import { createRequestSignal, throwIfAborted } from "./timeout.js";
 import { buildUrl } from "./url.js";
 import type { ClientOptions, RequestConfig, RequestOptions } from "./types.js";
 
@@ -23,11 +28,14 @@ export function createClient(options: ClientOptions) {
   const tokenRefresher = options.auth !== undefined ? createTokenRefresher(options.auth) : null;
 
   async function request<T>(path: string, requestOptions: RequestOptions<T>): Promise<T> {
+    let disposeRequestSignal: (() => void) | undefined;
     try {
       const url = buildUrl(options.baseUrl, path, requestOptions.query);
       const headers = mergeHeaders(options.headers, requestOptions.headers);
       const timeout = requestOptions.timeout ?? options.timeout;
-      const signal = createRequestSignal(timeout, requestOptions.signal);
+      const requestSignal = createRequestSignal(timeout, requestOptions.signal);
+      disposeRequestSignal = () => requestSignal.dispose();
+      const signal = requestSignal.signal;
       const retryOptions =
         requestOptions.retry === false
           ? { maxRetries: 0 }
@@ -53,6 +61,8 @@ export function createClient(options: ClientOptions) {
         headers,
         redirect: useManagedAuth ? "error" : "follow",
       };
+      const credentials = requestOptions.credentials ?? options.credentials;
+      if (credentials !== undefined) init.credentials = credentials;
       if (requestOptions.body !== undefined) init.body = requestOptions.body;
       if (signal !== undefined) init.signal = signal;
 
@@ -67,12 +77,10 @@ export function createClient(options: ClientOptions) {
       }
 
       const finalSignal = context.init.signal;
-      finalSignal?.throwIfAborted();
+      throwIfAborted(finalSignal);
 
       const finalHeaders = new Headers(context.init.headers);
       const cacheOptions = resolveCacheOptions(options.cache, requestOptions.cache);
-      // Avoid cross-user leaks: do not cache requests with credentials,
-      // Authorization, Cookie, or a configured authentication provider.
       const canCache =
         cacheOptions.enabled &&
         cacheOptions.policy !== "no-store" &&
@@ -82,22 +90,27 @@ export function createClient(options: ClientOptions) {
         !authEnabled &&
         !finalHeaders.has("authorization") &&
         !finalHeaders.has("cookie") &&
-        context.init.credentials !== "include" &&
-        context.init.credentials !== "same-origin";
+        context.init.credentials === "omit" &&
+        !hasNoStoreDirective(finalHeaders) &&
+        !hasUnsupportedCacheHeaders(finalHeaders);
       const cacheKey = cacheOptions.key ?? createCacheKey(context.url, finalHeaders);
 
-      if (
-        canCache &&
-        (cacheOptions.policy === "cache-first" || cacheOptions.policy === "cache-only")
-      ) {
-        if (cacheState.store.has(cacheKey)) {
-          finalSignal?.throwIfAborted();
+      if (cacheOptions.policy === "cache-only") {
+        if (canCache && cacheState.store.has(cacheKey)) {
+          throwIfAborted(finalSignal);
           return cacheState.read<T>(cacheKey);
         }
-        if (cacheOptions.policy === "cache-only") throw new NexoraCacheMissError(cacheKey);
+        throw new NexoraCacheMissError(cacheKey);
       }
 
-      const fetchAndParse = async (): Promise<T> => {
+      if (canCache && cacheOptions.policy === "cache-first") {
+        if (cacheState.store.has(cacheKey)) {
+          throwIfAborted(finalSignal);
+          return cacheState.read<T>(cacheKey);
+        }
+      }
+
+      const fetchAndParse = async (): Promise<{ value: Awaited<T>; cacheable: boolean }> => {
         const canReplayBody =
           context.init.body === undefined || typeof context.init.body === "string";
         const canRefresh =
@@ -119,13 +132,13 @@ export function createClient(options: ClientOptions) {
         );
         if (needsRefresh && tokenRefresher !== null && options.auth !== undefined) {
           await response.body?.cancel();
-          finalSignal?.throwIfAborted();
+          throwIfAborted(finalSignal);
           const latestToken = await getAccessToken(options.auth);
           const newToken =
             latestToken !== null && latestToken !== currentToken
               ? latestToken
               : await tokenRefresher.refresh();
-          finalSignal?.throwIfAborted();
+          throwIfAborted(finalSignal);
           if (newToken === null) throw new Error("Unable to refresh access token");
           const retryHeaders = new Headers(context.init.headers);
           applyBearerToken(retryHeaders, newToken);
@@ -139,13 +152,13 @@ export function createClient(options: ClientOptions) {
         response = await interceptors.response.run(response);
         if (!response.ok) throw await createHttpError(response);
         const validator = requestOptions.validate;
-        return validator === undefined
-          ? parseJson<T>(response)
-          : parseJson<T>(response, { validate: validator });
+        const value =
+          validator === undefined
+            ? await parseJson<T>(response)
+            : await parseJson<T>(response, { validate: validator });
+        return { value, cacheable: isCacheableResponse(response) };
       };
 
-      // Conservative sharing: only anonymous GETs without caller-specific
-      // cancellation, timeout, validation, or credentials are eligible.
       const dedupEnabled = requestOptions.deduplication ?? options.deduplication ?? false;
       const canDeduplicate =
         dedupEnabled &&
@@ -155,8 +168,8 @@ export function createClient(options: ClientOptions) {
         !authEnabled &&
         !finalHeaders.has("authorization") &&
         !finalHeaders.has("cookie") &&
-        context.init.credentials !== "include" &&
-        context.init.credentials !== "same-origin" &&
+        context.init.credentials === "omit" &&
+        !hasUnsupportedCacheHeaders(finalHeaders) &&
         finalSignal === undefined &&
         timeout === undefined &&
         requestOptions.validate === undefined;
@@ -164,36 +177,37 @@ export function createClient(options: ClientOptions) {
         retry: retryOptions,
         cache: cacheOptions,
       });
-      const runNetwork = (): Promise<T> =>
+      const runNetwork = (): Promise<{ value: Awaited<T>; cacheable: boolean }> =>
         canDeduplicate ? deduplicator.run(dedupKey, fetchAndParse) : fetchAndParse();
 
-      let result: T;
+      let result: { value: Awaited<T>; cacheable: boolean };
       if (canCache && cacheOptions.policy === "network-first") {
         try {
           result = await runNetwork();
         } catch (error) {
-          // Only transport failures can fall back to cached data.
-          // Do not hide HTTP, validation, auth, or abort errors.
           if (
             error instanceof TypeError &&
             !finalSignal?.aborted &&
             cacheState.store.has(cacheKey)
           ) {
-            return cacheState.read<T>(cacheKey);
+            result = { value: await cacheState.read<T>(cacheKey), cacheable: false };
+          } else {
+            throw error;
           }
-          throw error;
         }
       } else {
         result = await runNetwork();
       }
 
-      finalSignal?.throwIfAborted();
-      if (canCache && cacheOptions.ttl > 0) {
-        cacheState.store.set(cacheKey, result, cacheOptions.ttl);
+      throwIfAborted(finalSignal);
+      if (canCache && result.cacheable && cacheOptions.ttl > 0) {
+        cacheState.store.set(cacheKey, result.value, cacheOptions.ttl);
       }
-      return result;
+      return result.value;
     } catch (error) {
       throw await interceptors.error.run(error);
+    } finally {
+      disposeRequestSignal?.();
     }
   }
 

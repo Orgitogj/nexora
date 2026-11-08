@@ -1,7 +1,72 @@
 ﻿import type { CacheEntry, CacheStore } from "./cache-types.js";
 
 function cloneValue<T>(value: T): T {
-  return structuredClone(value);
+  if (typeof globalThis.structuredClone === "function") {
+    return globalThis.structuredClone(value);
+  }
+  return cloneWithoutStructuredClone(value, new WeakMap()) as T;
+}
+
+function cloneWithoutStructuredClone(value: unknown, clones: WeakMap<object, unknown>): unknown {
+  if (value === null || typeof value !== "object") {
+    if (typeof value === "function" || typeof value === "symbol") {
+      throw new TypeError("Cache values must be structured-cloneable");
+    }
+    return value;
+  }
+
+  const existingClone = clones.get(value);
+  if (existingClone !== undefined) return existingClone;
+
+  if (value instanceof Date) {
+    const clone = new Date(value.getTime());
+    clones.set(value, clone);
+    return clone;
+  }
+  if (value instanceof RegExp) {
+    const clone = new RegExp(value.source, value.flags);
+    clones.set(value, clone);
+    return clone;
+  }
+  if (value instanceof Map) {
+    const clone = new Map<unknown, unknown>();
+    clones.set(value, clone);
+    for (const [key, entry] of value) {
+      clone.set(
+        cloneWithoutStructuredClone(key, clones),
+        cloneWithoutStructuredClone(entry, clones),
+      );
+    }
+    return clone;
+  }
+  if (value instanceof Set) {
+    const clone = new Set<unknown>();
+    clones.set(value, clone);
+    for (const entry of value) clone.add(cloneWithoutStructuredClone(entry, clones));
+    return clone;
+  }
+
+  if (Array.isArray(value)) {
+    const clone = new Array<unknown>(value.length);
+    clones.set(value, clone);
+    for (let index = 0; index < value.length; index++) {
+      if (index in value) clone[index] = cloneWithoutStructuredClone(value[index], clones);
+    }
+    return clone;
+  }
+
+  const prototype = Object.getPrototypeOf(value) as object | null;
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError("This runtime can only cache plain objects without structuredClone");
+  }
+
+  const clone = Object.create(prototype) as Record<string, unknown>;
+  clones.set(value, clone);
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    clone[key] = cloneWithoutStructuredClone(record[key], clones);
+  }
+  return clone;
 }
 
 export function createMemoryCache(): CacheStore {

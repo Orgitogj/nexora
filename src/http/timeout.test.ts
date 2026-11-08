@@ -44,7 +44,8 @@ describe("Timeout and cancellation", () => {
 
     const request = client.get("/slow", { timeout: 50 });
     const requestError = expect(request).rejects.toMatchObject({ name: "TimeoutError" });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(50);
 
     await requestError;
@@ -101,7 +102,8 @@ describe("Timeout and cancellation", () => {
     });
     const timeoutRequest = client.get("/timeout", { timeout: 10 });
     const timeoutError = expect(timeoutRequest).rejects.toMatchObject({ name: "TimeoutError" });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(10);
     await timeoutError;
 
@@ -120,5 +122,34 @@ describe("Timeout and cancellation", () => {
     await client.get("/fast", { timeout: 60_000 });
     expect(vi.getTimerCount()).toBe(0);
     await expect(client.get("/invalid", { timeout: -1 })).rejects.toThrow(RangeError);
+  });
+
+  it("supports runtimes without AbortSignal timeout and composition helpers", async () => {
+    vi.useFakeTimers();
+    const timeoutDescriptor = Object.getOwnPropertyDescriptor(AbortSignal, "timeout");
+    const anyDescriptor = Object.getOwnPropertyDescriptor(AbortSignal, "any");
+    Object.defineProperty(AbortSignal, "timeout", { configurable: true, value: undefined });
+    Object.defineProperty(AbortSignal, "any", { configurable: true, value: undefined });
+
+    try {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ ok: true }));
+      const client = createClient({ baseUrl: "https://api.example.test" });
+
+      await expect(
+        client.get("/fast", { timeout: 1_000, signal: new AbortController().signal }),
+      ).resolves.toEqual({ ok: true });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      if (timeoutDescriptor !== undefined) {
+        Object.defineProperty(AbortSignal, "timeout", timeoutDescriptor);
+      } else {
+        Reflect.deleteProperty(AbortSignal, "timeout");
+      }
+      if (anyDescriptor !== undefined) {
+        Object.defineProperty(AbortSignal, "any", anyDescriptor);
+      } else {
+        Reflect.deleteProperty(AbortSignal, "any");
+      }
+    }
   });
 });
