@@ -19,4 +19,26 @@ export default defineConfig(
     files: ["**/*.js", "**/*.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    files: ["validation/react-native/**/*.{js,mjs}"],
+    languageOptions: {
+      globals: {
+        __dirname: "readonly",
+        clearInterval: "readonly",
+        clearTimeout: "readonly",
+        console: "readonly",
+        module: "readonly",
+        process: "readonly",
+        require: "readonly",
+        setInterval: "readonly",
+        setTimeout: "readonly",
+      },
+    },
+  },
+  {
+    files: ["validation/react-native/metro.config.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
 );
