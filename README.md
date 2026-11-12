@@ -14,6 +14,8 @@ Requests with custom headers are not cached or deduplicated because the client c
 
 The built-in memory cache can be bounded with `cache.maxEntries` on client configuration. When full, it evicts the least recently used entry; reads refresh an entry's recency. The default remains uncapped for backwards compatibility. `createMemoryCache({ maxEntries })` applies the same limit when using the store directly.
 
+Cached requests can include `cache.tags`, such as `cache: { enabled: true, tags: ["users", "user:42"] }`. Use `client.cache.invalidateTag("users")` or `client.cache.invalidateTags(["users", "posts"])` to remove matching entries. Both methods return the number of live entries invalidated; cache keys without matching tags are unaffected.
+
 The in-memory cache uses the native `structuredClone` when available. Runtimes without it can still cache plain objects, arrays, dates, regular expressions, maps, and sets; other built-in object types require native `structuredClone`.
 
 ## Development
