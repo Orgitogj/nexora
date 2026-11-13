@@ -16,6 +16,8 @@ The built-in memory cache can be bounded with `cache.maxEntries` on client confi
 
 Cached requests can include `cache.tags`, such as `cache: { enabled: true, tags: ["users", "user:42"] }`. Use `client.cache.invalidateTag("users")` or `client.cache.invalidateTags(["users", "posts"])` to remove matching entries. Both methods return the number of live entries invalidated; cache keys without matching tags are unaffected.
 
+The configured cache `ttl` is an upper bound on response freshness. A server `Cache-Control: max-age` or `Expires` header can shorten that lifetime; `Age` is accounted for. Responses marked `no-cache` are not stored because Nexora does not currently revalidate cached responses.
+
 The in-memory cache uses the native `structuredClone` when available. Runtimes without it can still cache plain objects, arrays, dates, regular expressions, maps, and sets; other built-in object types require native `structuredClone`.
 
 ## Development
