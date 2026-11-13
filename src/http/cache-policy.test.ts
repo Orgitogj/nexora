@@ -260,6 +260,29 @@ describe("Cache policy", () => {
     ]);
   });
 
+  it("limits the client cache to the configured maximum entry count", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(jsonResponse({ id: 1 })));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true, maxEntries: 2 },
+      credentials: "omit",
+    });
+
+    await client.get("/users/1");
+    await client.get("/users/2");
+    await client.get("/users/1");
+    await client.get("/users/3");
+    await client.get("/users/2");
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(client.cache.keys()).toEqual([
+      JSON.stringify(["GET", "https://api.example.test/users/3", "", ""]),
+      JSON.stringify(["GET", "https://api.example.test/users/2", "", ""]),
+    ]);
+  });
+
   it("uses a cached value on network-first transport failure", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -341,5 +364,14 @@ describe("Cache policy", () => {
   it("rejects invalid cache TTLs instead of silently disabling caching", () => {
     expect(() => resolveCacheOptions({ ttl: Number.NaN }, undefined)).toThrow(RangeError);
     expect(() => resolveCacheOptions(undefined, { ttl: -1 })).toThrow(RangeError);
+  });
+
+  it("rejects an invalid client cache capacity", () => {
+    expect(() =>
+      createClient({
+        baseUrl: "https://api.example.test",
+        cache: { maxEntries: 0 },
+      }),
+    ).toThrow(RangeError);
   });
 });

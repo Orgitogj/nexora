@@ -32,7 +32,9 @@ export { createCacheKey } from "./http/cache-key.js";
 export type {
   CachePolicy,
   CacheOptions,
+  ClientCacheOptions,
   CacheRequestOptions,
   CacheStore,
+  MemoryCacheOptions,
 } from "./http/cache-types.js";
 export type { CacheController } from "./http/cache.js";

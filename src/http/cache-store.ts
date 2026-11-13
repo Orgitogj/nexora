@@ -1,4 +1,4 @@
-﻿import type { CacheEntry, CacheStore } from "./cache-types.js";
+import type { CacheEntry, CacheStore, MemoryCacheOptions } from "./cache-types.js";
 
 function cloneValue<T>(value: T): T {
   if (typeof globalThis.structuredClone === "function") {
@@ -69,7 +69,12 @@ function cloneWithoutStructuredClone(value: unknown, clones: WeakMap<object, unk
   return clone;
 }
 
-export function createMemoryCache(): CacheStore {
+export function createMemoryCache(options: MemoryCacheOptions = {}): CacheStore {
+  const maxEntries = options.maxEntries;
+  if (maxEntries !== undefined && (!Number.isSafeInteger(maxEntries) || maxEntries < 1)) {
+    throw new RangeError("Cache maxEntries must be a positive safe integer");
+  }
+
   const entries = new Map<string, CacheEntry>();
 
   function validEntry(key: string): CacheEntry | undefined {
@@ -82,10 +87,17 @@ export function createMemoryCache(): CacheStore {
     return entry;
   }
 
+  function removeExpiredEntries(): void {
+    for (const key of entries.keys()) validEntry(key);
+  }
+
   return {
     get<T>(key: string): T | undefined {
       const entry = validEntry(key);
-      return entry === undefined ? undefined : cloneValue(entry.value as T);
+      if (entry === undefined) return undefined;
+      entries.delete(key);
+      entries.set(key, entry);
+      return cloneValue(entry.value as T);
     },
     set<T>(key: string, value: T, ttl: number): void {
       if (!Number.isFinite(ttl) || ttl < 0) {
@@ -95,7 +107,14 @@ export function createMemoryCache(): CacheStore {
         entries.delete(key);
         return;
       }
-      entries.set(key, { value: cloneValue(value), expiresAt: Date.now() + ttl });
+      const clonedValue = cloneValue(value);
+      if (maxEntries !== undefined) removeExpiredEntries();
+      entries.delete(key);
+      if (maxEntries !== undefined && entries.size >= maxEntries) {
+        const leastRecentlyUsedKey = entries.keys().next().value;
+        if (leastRecentlyUsedKey !== undefined) entries.delete(leastRecentlyUsedKey);
+      }
+      entries.set(key, { value: clonedValue, expiresAt: Date.now() + ttl });
     },
     has(key: string): boolean {
       return validEntry(key) !== undefined;

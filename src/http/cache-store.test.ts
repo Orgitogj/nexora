@@ -54,6 +54,48 @@ describe("createMemoryCache", () => {
     expect(() => cache.set("user", { id: 1 }, ttl)).toThrow(RangeError);
   });
 
+  it("evicts the least recently used entry when capacity is exceeded", () => {
+    const cache = createMemoryCache({ maxEntries: 2 });
+    cache.set("first", 1, 5_000);
+    cache.set("second", 2, 5_000);
+
+    expect(cache.get("first")).toBe(1);
+    cache.set("third", 3, 5_000);
+
+    expect(cache.keys()).toEqual(["first", "third"]);
+    expect(cache.get("second")).toBeUndefined();
+  });
+
+  it("removes expired entries before evicting active entries", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-07T12:00:00Z"));
+
+    const cache = createMemoryCache({ maxEntries: 2 });
+    cache.set("expired", "temporary", 100);
+    cache.set("active", "persistent", 1_000);
+
+    vi.advanceTimersByTime(100);
+    cache.set("new", "value", 1_000);
+
+    expect(cache.keys()).toEqual(["active", "new"]);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    "throws RangeError for invalid maxEntries: %s",
+    (maxEntries) => {
+      expect(() => createMemoryCache({ maxEntries })).toThrow(RangeError);
+    },
+  );
+
+  it("preserves existing entries when a value cannot be cloned", () => {
+    const cache = createMemoryCache({ maxEntries: 1 });
+    cache.set("existing", "value", 5_000);
+
+    expect(() => cache.set("uncloneable", () => undefined, 5_000)).toThrow();
+    expect(cache.get("existing")).toBe("value");
+    expect(cache.keys()).toEqual(["existing"]);
+  });
+
   it("clones values when storing and retrieving them", () => {
     const cache = createMemoryCache();
     const original = { profile: { name: "Alex" } };

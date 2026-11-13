@@ -1,5 +1,5 @@
 ﻿import type { ResponseValidator } from "./response-validator.js";
-import type { CacheOptions, CacheRequestOptions } from "./cache-types.js";
+import type { CacheRequestOptions, ClientCacheOptions } from "./cache-types.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export type QueryValue = string | number | boolean | null | undefined;
@@ -23,7 +23,7 @@ export interface ClientOptions {
   timeout?: number;
   retry?: RetryOptions;
   auth?: AuthOptions;
-  cache?: CacheOptions;
+  cache?: ClientCacheOptions;
   deduplication?: boolean;
 }
 
