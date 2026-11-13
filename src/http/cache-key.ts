@@ -19,7 +19,13 @@ export function hasNoStoreDirective(headers: Headers): boolean {
 
 export function isCacheableResponse(response: Response): boolean {
   if (response.status === 206) return false;
-  if (hasCacheControlDirective(response.headers.get("cache-control"), "no-store")) return false;
+  const cacheControl = response.headers.get("cache-control");
+  if (
+    hasCacheControlDirective(cacheControl, "no-store") ||
+    hasCacheControlDirective(cacheControl, "no-cache")
+  ) {
+    return false;
+  }
 
   const vary = response.headers.get("vary");
   if (vary === null) return true;
