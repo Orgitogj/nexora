@@ -108,16 +108,18 @@ export function createClient(options: ClientOptions) {
       const cacheKey = cacheOptions.key ?? createCacheKey(context.url, finalHeaders);
 
       if (cacheOptions.policy === "cache-only") {
-        if (canCache && cacheState.store.has(cacheKey)) {
+        if (canCache && cacheState.controller.has(cacheKey)) {
           throwIfAborted(finalSignal);
+          cacheState.addTags(cacheKey, cacheOptions.tags);
           return cacheState.read<T>(cacheKey);
         }
         throw new NexoraCacheMissError(cacheKey);
       }
 
       if (canCache && cacheOptions.policy === "cache-first") {
-        if (cacheState.store.has(cacheKey)) {
+        if (cacheState.controller.has(cacheKey)) {
           throwIfAborted(finalSignal);
+          cacheState.addTags(cacheKey, cacheOptions.tags);
           return cacheState.read<T>(cacheKey);
         }
       }
@@ -211,8 +213,9 @@ export function createClient(options: ClientOptions) {
           if (
             error instanceof TransportFailure &&
             !finalSignal?.aborted &&
-            cacheState.store.has(cacheKey)
+            cacheState.controller.has(cacheKey)
           ) {
+            cacheState.addTags(cacheKey, cacheOptions.tags);
             result = { value: await cacheState.read<T>(cacheKey), cacheable: false };
           } else if (error instanceof TransportFailure) {
             throw error.error;
@@ -226,7 +229,7 @@ export function createClient(options: ClientOptions) {
 
       throwIfAborted(finalSignal);
       if (canCache && result.cacheable && cacheOptions.ttl > 0) {
-        cacheState.store.set(cacheKey, result.value, cacheOptions.ttl);
+        cacheState.set(cacheKey, result.value, cacheOptions.ttl, cacheOptions.tags);
       }
       return result.value;
     } catch (error) {

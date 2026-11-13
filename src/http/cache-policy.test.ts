@@ -10,6 +10,7 @@ function jsonResponse(value: unknown, init?: ResponseInit): Response {
 
 describe("Cache policy", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -283,6 +284,127 @@ describe("Cache policy", () => {
     ]);
   });
 
+  it("invalidates every request associated with a tag and leaves unrelated entries cached", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(jsonResponse({ id: 1 })));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+
+    await client.get("/users/1", { cache: { tags: ["users", "user:1"] } });
+    await client.get("/users/2", { cache: { tags: ["users", "user:2"] } });
+    await client.get("/posts/1", { cache: { tags: ["posts"] } });
+
+    expect(client.cache.invalidateTag("users")).toBe(2);
+    await client.get("/users/1", { cache: { tags: ["users", "user:1"] } });
+    await client.get("/users/2", { cache: { tags: ["users", "user:2"] } });
+    await client.get("/posts/1", { cache: { tags: ["posts"] } });
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(client.cache.invalidateTag("user:1")).toBe(1);
+    expect(client.cache.invalidateTags(["users", "posts"])).toBe(2);
+    expect(client.cache.keys()).toEqual([]);
+  });
+
+  it("adds tags when a cached key is reused with additional tags", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(jsonResponse({ id: 1 })));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+
+    await client.get("/users/1", { cache: { tags: ["users"] } });
+    await client.get("/users/1", { cache: { tags: ["featured"] } });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(client.cache.invalidateTag("users")).toBe(1);
+    expect(client.cache.invalidateTag("featured")).toBe(0);
+  });
+
+  it("invalidates cached undefined responses", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+
+    await client.get("/empty", { cache: { tags: ["empty"] } });
+    await client.get("/empty", { cache: { tags: ["empty"] } });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(client.cache.invalidateTag("empty")).toBe(1);
+  });
+
+  it("cleans tag associations after manual deletion and clearing", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(jsonResponse({ id: 1 })),
+    );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+
+    await client.get("/users/1", { cache: { tags: ["users"] } });
+    const key = client.cache.keys()[0]!;
+    expect(client.cache.delete(key)).toBe(true);
+    expect(client.cache.invalidateTag("users")).toBe(0);
+
+    await client.get("/users/1", { cache: { tags: ["users"] } });
+    client.cache.clear();
+
+    expect(client.cache.invalidateTag("users")).toBe(0);
+    expect(client.cache.keys()).toEqual([]);
+  });
+
+  it("does not invalidate cache entries evicted by the bounded LRU store", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(jsonResponse({ id: 1 })));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true, maxEntries: 2 },
+      credentials: "omit",
+    });
+
+    await client.get("/first", { cache: { tags: ["first"] } });
+    await client.get("/second", { cache: { tags: ["second"] } });
+    await client.get("/third", { cache: { tags: ["third"] } });
+
+    expect(client.cache.invalidateTag("first")).toBe(0);
+    expect(client.cache.invalidateTag("second")).toBe(1);
+    expect(client.cache.keys()).toEqual([
+      JSON.stringify(["GET", "https://api.example.test/third", "", ""]),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns zero when all entries for a tag have expired", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-07T12:00:00Z"));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ id: 1 }));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+
+    await client.get("/users/1", { cache: { ttl: 100, tags: ["users"] } });
+    vi.advanceTimersByTime(100);
+
+    expect(client.cache.invalidateTag("users")).toBe(0);
+    expect(client.cache.keys()).toEqual([]);
+  });
+
   it("uses a cached value on network-first transport failure", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -374,4 +496,11 @@ describe("Cache policy", () => {
       }),
     ).toThrow(RangeError);
   });
+
+  it.each([{ tags: [""] }, { tags: [" "] }, { tags: ["users", ""] }])(
+    "rejects invalid cache tags",
+    ({ tags }) => {
+      expect(() => resolveCacheOptions(undefined, { tags })).toThrow(TypeError);
+    },
+  );
 });

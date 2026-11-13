@@ -16,6 +16,7 @@ export interface MemoryCacheOptions {
 
 export interface CacheRequestOptions extends CacheOptions {
   key?: string;
+  tags?: readonly string[];
 }
 
 export interface CacheEntry<T = unknown> {
