@@ -90,7 +90,10 @@ export function createMemoryCache(options: MemoryCacheOptions = {}): CacheStore 
   return {
     get<T>(key: string): T | undefined {
       const entry = validEntry(key);
-      return entry === undefined ? undefined : cloneValue(entry.value as T);
+      if (entry === undefined) return undefined;
+      entries.delete(key);
+      entries.set(key, entry);
+      return cloneValue(entry.value as T);
     },
     set<T>(key: string, value: T, ttl: number): void {
       if (!Number.isFinite(ttl) || ttl < 0) {
