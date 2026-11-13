@@ -1,6 +1,7 @@
 ﻿import { applyBearerToken, getAccessToken } from "./auth.js";
 import { shouldRefreshToken } from "./auth-policy.js";
 import { createCacheController } from "./cache.js";
+import { createMemoryCache } from "./cache-store.js";
 import {
   createCacheKey,
   hasNoStoreDirective,
@@ -30,7 +31,11 @@ class TransportFailure extends Error {
 
 export function createClient(options: ClientOptions) {
   const interceptors = createInterceptors();
-  const cacheState = createCacheController();
+  const cacheState = createCacheController(
+    createMemoryCache(
+      options.cache?.maxEntries === undefined ? {} : { maxEntries: options.cache.maxEntries },
+    ),
+  );
   const deduplicator = createDeduplicator();
   const tokenRefresher = options.auth !== undefined ? createTokenRefresher(options.auth) : null;
 
