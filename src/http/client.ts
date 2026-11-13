@@ -4,9 +4,9 @@ import { createCacheController } from "./cache.js";
 import { createMemoryCache } from "./cache-store.js";
 import {
   createCacheKey,
+  getResponseCacheTtl,
   hasNoStoreDirective,
   hasUnsupportedCacheHeaders,
-  isCacheableResponse,
 } from "./cache-key.js";
 import { resolveCacheOptions } from "./cache-policy.js";
 import { NexoraCacheMissError } from "./cache-errors.js";
@@ -124,7 +124,7 @@ export function createClient(options: ClientOptions) {
         }
       }
 
-      const fetchAndParse = async (): Promise<{ value: Awaited<T>; cacheable: boolean }> => {
+      const fetchAndParse = async (): Promise<{ value: Awaited<T>; cacheTtl: number }> => {
         const canReplayBody =
           context.init.body === undefined || typeof context.init.body === "string";
         const canRefresh =
@@ -173,7 +173,8 @@ export function createClient(options: ClientOptions) {
             retryOptions,
           );
         }
-        const serverResponseCacheable = isCacheableResponse(response);
+        const receivedAt = Date.now();
+        const serverCacheTtl = getResponseCacheTtl(response, cacheOptions.ttl, receivedAt);
         response = await interceptors.response.run(response);
         if (!response.ok) throw await createHttpError(response);
         const validator = requestOptions.validate;
@@ -181,7 +182,13 @@ export function createClient(options: ClientOptions) {
           validator === undefined
             ? await parseJson<T>(response)
             : await parseJson<T>(response, { validate: validator });
-        return { value, cacheable: serverResponseCacheable && isCacheableResponse(response) };
+        return {
+          value,
+          cacheTtl: Math.min(
+            serverCacheTtl,
+            getResponseCacheTtl(response, cacheOptions.ttl, receivedAt),
+          ),
+        };
       };
 
       const dedupEnabled = requestOptions.deduplication ?? options.deduplication ?? false;
@@ -202,10 +209,10 @@ export function createClient(options: ClientOptions) {
         retry: retryOptions,
         cache: cacheOptions,
       });
-      const runNetwork = (): Promise<{ value: Awaited<T>; cacheable: boolean }> =>
+      const runNetwork = (): Promise<{ value: Awaited<T>; cacheTtl: number }> =>
         canDeduplicate ? deduplicator.run(dedupKey, fetchAndParse) : fetchAndParse();
 
-      let result: { value: Awaited<T>; cacheable: boolean };
+      let result: { value: Awaited<T>; cacheTtl: number };
       if (canCache && cacheOptions.policy === "network-first") {
         try {
           result = await runNetwork();
@@ -216,7 +223,7 @@ export function createClient(options: ClientOptions) {
             cacheState.controller.has(cacheKey)
           ) {
             cacheState.addTags(cacheKey, cacheOptions.tags);
-            result = { value: await cacheState.read<T>(cacheKey), cacheable: false };
+            result = { value: await cacheState.read<T>(cacheKey), cacheTtl: 0 };
           } else if (error instanceof TransportFailure) {
             throw error.error;
           } else {
@@ -228,8 +235,8 @@ export function createClient(options: ClientOptions) {
       }
 
       throwIfAborted(finalSignal);
-      if (canCache && result.cacheable && cacheOptions.ttl > 0) {
-        cacheState.set(cacheKey, result.value, cacheOptions.ttl, cacheOptions.tags);
+      if (canCache && result.cacheTtl > 0) {
+        cacheState.set(cacheKey, result.value, result.cacheTtl, cacheOptions.tags);
       }
       return result.value;
     } catch (error) {
