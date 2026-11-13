@@ -6,6 +6,14 @@ export interface CacheOptions {
   policy?: CachePolicy;
 }
 
+export interface ClientCacheOptions extends CacheOptions {
+  maxEntries?: number;
+}
+
+export interface MemoryCacheOptions {
+  maxEntries?: number;
+}
+
 export interface CacheRequestOptions extends CacheOptions {
   key?: string;
 }
