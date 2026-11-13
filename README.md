@@ -12,6 +12,8 @@ The HTTP client only caches or deduplicates requests when their credentials mode
 
 Requests with custom headers are not cached or deduplicated because the client cannot determine whether a server varies its response by those headers. Responses with `Cache-Control: no-store`, `Vary: *`, or a `Vary` field other than `Accept` or `Accept-Language` are not stored.
 
+The built-in memory cache can be bounded with `cache.maxEntries` on client configuration. When full, it evicts the least recently used entry; reads refresh an entry's recency. The default remains uncapped for backwards compatibility. `createMemoryCache({ maxEntries })` applies the same limit when using the store directly.
+
 The in-memory cache uses the native `structuredClone` when available. Runtimes without it can still cache plain objects, arrays, dates, regular expressions, maps, and sets; other built-in object types require native `structuredClone`.
 
 ## Development
