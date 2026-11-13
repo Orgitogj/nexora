@@ -87,6 +87,10 @@ export function createMemoryCache(options: MemoryCacheOptions = {}): CacheStore 
     return entry;
   }
 
+  function removeExpiredEntries(): void {
+    for (const key of entries.keys()) validEntry(key);
+  }
+
   return {
     get<T>(key: string): T | undefined {
       const entry = validEntry(key);
@@ -103,7 +107,14 @@ export function createMemoryCache(options: MemoryCacheOptions = {}): CacheStore 
         entries.delete(key);
         return;
       }
-      entries.set(key, { value: cloneValue(value), expiresAt: Date.now() + ttl });
+      const clonedValue = cloneValue(value);
+      if (maxEntries !== undefined) removeExpiredEntries();
+      entries.delete(key);
+      if (maxEntries !== undefined && entries.size >= maxEntries) {
+        const leastRecentlyUsedKey = entries.keys().next().value;
+        if (leastRecentlyUsedKey !== undefined) entries.delete(leastRecentlyUsedKey);
+      }
+      entries.set(key, { value: clonedValue, expiresAt: Date.now() + ttl });
     },
     has(key: string): boolean {
       return validEntry(key) !== undefined;
