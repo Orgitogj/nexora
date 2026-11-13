@@ -201,6 +201,101 @@ describe("Cache policy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("does not cache no-cache responses", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ id: 1 }, { headers: { "Cache-Control": "no-cache" } })),
+      );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+
+    await client.get("/users");
+    await client.get("/users");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache no-cache responses when an interceptor removes the directive", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ id: 1 }, { headers: { "Cache-Control": "no-cache" } })),
+      );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+    client.interceptors.response.use((response) => {
+      const headers = new Headers(response.headers);
+      headers.delete("Cache-Control");
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    });
+
+    await client.get("/users");
+    await client.get("/users");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("expires cached values when the server max-age is reached", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-07T12:00:00Z"));
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ id: 1 }, { headers: { "Cache-Control": "max-age=2" } })),
+      );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true, ttl: 60_000 },
+      credentials: "omit",
+    });
+
+    await client.get("/users");
+    vi.advanceTimersByTime(1_999);
+    await client.get("/users");
+    vi.advanceTimersByTime(1);
+    await client.get("/users");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let a response interceptor extend server freshness", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ id: 1 }, { headers: { "Cache-Control": "max-age=0" } })),
+      );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+    client.interceptors.response.use((response) => {
+      const headers = new Headers(response.headers);
+      headers.set("Cache-Control", "max-age=60");
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    });
+
+    await client.get("/users");
+    await client.get("/users");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("does not cache partial content as a complete representation", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
