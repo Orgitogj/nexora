@@ -1,4 +1,4 @@
-﻿import type { CacheEntry, CacheStore } from "./cache-types.js";
+import type { CacheEntry, CacheStore, MemoryCacheOptions } from "./cache-types.js";
 
 function cloneValue<T>(value: T): T {
   if (typeof globalThis.structuredClone === "function") {
@@ -69,7 +69,12 @@ function cloneWithoutStructuredClone(value: unknown, clones: WeakMap<object, unk
   return clone;
 }
 
-export function createMemoryCache(): CacheStore {
+export function createMemoryCache(options: MemoryCacheOptions = {}): CacheStore {
+  const maxEntries = options.maxEntries;
+  if (maxEntries !== undefined && (!Number.isSafeInteger(maxEntries) || maxEntries < 1)) {
+    throw new RangeError("Cache maxEntries must be a positive safe integer");
+  }
+
   const entries = new Map<string, CacheEntry>();
 
   function validEntry(key: string): CacheEntry | undefined {
