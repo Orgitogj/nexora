@@ -7,6 +7,7 @@ import {
   getResponseCacheTtl,
   hasNoStoreDirective,
   hasUnsupportedCacheHeaders,
+  isCacheableResponse,
 } from "./cache-key.js";
 import { resolveCacheOptions } from "./cache-policy.js";
 import { NexoraCacheMissError } from "./cache-errors.js";
@@ -20,6 +21,7 @@ import { fetchWithRetry } from "./retry.js";
 import { createTokenRefresher } from "./token-refresh.js";
 import { createRequestSignal, throwIfAborted } from "./timeout.js";
 import { buildUrl } from "./url.js";
+import type { CacheEntryMetadata } from "./cache-types.js";
 import type { ClientOptions, RequestConfig, RequestOptions } from "./types.js";
 
 class TransportFailure extends Error {
@@ -106,8 +108,17 @@ export function createClient(options: ClientOptions) {
         !hasNoStoreDirective(finalHeaders) &&
         !hasUnsupportedCacheHeaders(finalHeaders);
       const cacheKey = cacheOptions.key ?? createCacheKey(context.url, finalHeaders);
+      const staleEntry =
+        canCache && cacheOptions.revalidate
+          ? cacheState.store.getStale?.<Awaited<T>>(cacheKey)
+          : undefined;
 
       if (cacheOptions.policy === "cache-only") {
+        if (canCache && staleEntry !== undefined) {
+          throwIfAborted(finalSignal);
+          cacheState.addTags(cacheKey, cacheOptions.tags);
+          return staleEntry.value;
+        }
         if (canCache && cacheState.controller.has(cacheKey)) {
           throwIfAborted(finalSignal);
           cacheState.addTags(cacheKey, cacheOptions.tags);
@@ -117,14 +128,26 @@ export function createClient(options: ClientOptions) {
       }
 
       if (canCache && cacheOptions.policy === "cache-first") {
-        if (cacheState.controller.has(cacheKey)) {
+        const staleEntryIsFresh =
+          staleEntry !== undefined &&
+          Date.now() < staleEntry.expiresAt &&
+          staleEntry.metadata?.requiresRevalidation !== true;
+        if (
+          staleEntryIsFresh ||
+          (staleEntry === undefined && cacheState.controller.has(cacheKey))
+        ) {
           throwIfAborted(finalSignal);
           cacheState.addTags(cacheKey, cacheOptions.tags);
-          return cacheState.read<T>(cacheKey);
+          return staleEntry === undefined ? cacheState.read<T>(cacheKey) : staleEntry.value;
         }
       }
 
-      const fetchAndParse = async (): Promise<{ value: Awaited<T>; cacheTtl: number }> => {
+      const fetchAndParse = async (): Promise<{
+        value: Awaited<T>;
+        cacheTtl: number;
+        storageTtl: number;
+        metadata?: CacheEntryMetadata;
+      }> => {
         const canReplayBody =
           context.init.body === undefined || typeof context.init.body === "string";
         const canRefresh =
@@ -147,7 +170,24 @@ export function createClient(options: ClientOptions) {
             throw error;
           }
         };
-        let response = await fetchResponse(context.init);
+        const networkHeaders = new Headers(context.init.headers);
+        const staleHeaders = new Headers(
+          staleEntry?.metadata?.headers.map(([name, value]) => [name, value]),
+        );
+        const etag = staleHeaders.get("etag");
+        const lastModified = staleHeaders.get("last-modified");
+        if (cacheOptions.revalidate && etag !== null && !networkHeaders.has("if-none-match")) {
+          networkHeaders.set("If-None-Match", etag);
+        }
+        if (
+          cacheOptions.revalidate &&
+          lastModified !== null &&
+          !networkHeaders.has("if-modified-since")
+        ) {
+          networkHeaders.set("If-Modified-Since", lastModified);
+        }
+        const networkInit = { ...context.init, headers: networkHeaders };
+        let response = await fetchResponse(networkInit);
         const needsRefresh = shouldRefreshToken(
           response.status,
           canRefresh,
@@ -164,16 +204,38 @@ export function createClient(options: ClientOptions) {
               : await tokenRefresher.refresh();
           throwIfAborted(finalSignal);
           if (newToken === null) throw new Error("Unable to refresh access token");
-          const retryHeaders = new Headers(context.init.headers);
+          const retryHeaders = new Headers(networkInit.headers);
           applyBearerToken(retryHeaders, newToken);
           response = await fetchWithRetry(
             context.url,
-            { ...context.init, headers: retryHeaders },
+            { ...networkInit, headers: retryHeaders },
             requestOptions.method,
             retryOptions,
           );
         }
+        if (response.status === 304 && staleEntry !== undefined) {
+          const revalidatedAt = Date.now();
+          const revalidatedHeaders = new Headers(staleHeaders);
+          response.headers.forEach((value, name) => revalidatedHeaders.set(name, value));
+          if (!response.headers.has("age")) revalidatedHeaders.delete("age");
+          if (!response.headers.has("date")) {
+            revalidatedHeaders.set("date", new Date(revalidatedAt).toUTCString());
+          }
+          revalidatedHeaders.delete("content-length");
+          revalidatedHeaders.delete("content-encoding");
+          revalidatedHeaders.delete("transfer-encoding");
+          const cachedBody = JSON.stringify(staleEntry.value);
+          response = new Response(cachedBody === undefined ? null : cachedBody, {
+            status: staleEntry.value === undefined ? 204 : 200,
+            headers: revalidatedHeaders,
+          });
+        }
         const receivedAt = Date.now();
+        const serverHeaders = [...response.headers.entries()];
+        const serverCacheable = isCacheableResponse(response, cacheOptions.revalidate);
+        if (cacheOptions.revalidate && !serverCacheable) {
+          cacheState.controller.delete(cacheKey);
+        }
         const serverCacheTtl = getResponseCacheTtl(response, cacheOptions.ttl, receivedAt);
         response = await interceptors.response.run(response);
         if (!response.ok) throw await createHttpError(response);
@@ -182,12 +244,24 @@ export function createClient(options: ClientOptions) {
           validator === undefined
             ? await parseJson<T>(response)
             : await parseJson<T>(response, { validate: validator });
+        const cacheTtl = serverCacheable
+          ? Math.min(serverCacheTtl, getResponseCacheTtl(response, cacheOptions.ttl, receivedAt))
+          : 0;
+        const requiresRevalidation =
+          cacheOptions.revalidate && serverCacheable && serverCacheTtl === 0;
         return {
           value,
-          cacheTtl: Math.min(
-            serverCacheTtl,
-            getResponseCacheTtl(response, cacheOptions.ttl, receivedAt),
-          ),
+          cacheTtl,
+          storageTtl: requiresRevalidation ? cacheOptions.ttl : cacheTtl,
+          ...(cacheOptions.revalidate && serverCacheable
+            ? {
+                metadata: {
+                  headers: serverHeaders,
+                  requiresRevalidation,
+                  retainUntil: receivedAt + cacheOptions.ttl,
+                },
+              }
+            : {}),
         };
       };
 
@@ -209,10 +283,10 @@ export function createClient(options: ClientOptions) {
         retry: retryOptions,
         cache: cacheOptions,
       });
-      const runNetwork = (): Promise<{ value: Awaited<T>; cacheTtl: number }> =>
+      const runNetwork = (): ReturnType<typeof fetchAndParse> =>
         canDeduplicate ? deduplicator.run(dedupKey, fetchAndParse) : fetchAndParse();
 
-      let result: { value: Awaited<T>; cacheTtl: number };
+      let result: Awaited<ReturnType<typeof fetchAndParse>>;
       if (canCache && cacheOptions.policy === "network-first") {
         try {
           result = await runNetwork();
@@ -220,10 +294,15 @@ export function createClient(options: ClientOptions) {
           if (
             error instanceof TransportFailure &&
             !finalSignal?.aborted &&
-            cacheState.controller.has(cacheKey)
+            (cacheState.controller.has(cacheKey) || staleEntry !== undefined)
           ) {
             cacheState.addTags(cacheKey, cacheOptions.tags);
-            result = { value: await cacheState.read<T>(cacheKey), cacheTtl: 0 };
+            result = {
+              value:
+                staleEntry === undefined ? cacheState.read<Awaited<T>>(cacheKey) : staleEntry.value,
+              cacheTtl: 0,
+              storageTtl: 0,
+            };
           } else if (error instanceof TransportFailure) {
             throw error.error;
           } else {
@@ -235,8 +314,14 @@ export function createClient(options: ClientOptions) {
       }
 
       throwIfAborted(finalSignal);
-      if (canCache && result.cacheTtl > 0) {
-        cacheState.set(cacheKey, result.value, result.cacheTtl, cacheOptions.tags);
+      if (canCache && result.storageTtl > 0) {
+        cacheState.set(
+          cacheKey,
+          result.value,
+          result.storageTtl,
+          cacheOptions.tags,
+          result.metadata,
+        );
       }
       return result.value;
     } catch (error) {

@@ -4,6 +4,7 @@ export interface CacheOptions {
   enabled?: boolean;
   ttl?: number;
   policy?: CachePolicy;
+  revalidate?: boolean;
 }
 
 export interface ClientCacheOptions extends CacheOptions {
@@ -22,11 +23,19 @@ export interface CacheRequestOptions extends CacheOptions {
 export interface CacheEntry<T = unknown> {
   value: T;
   expiresAt: number;
+  metadata?: CacheEntryMetadata;
+}
+
+export interface CacheEntryMetadata {
+  headers: readonly (readonly [string, string])[];
+  requiresRevalidation: boolean;
+  retainUntil: number;
 }
 
 export interface CacheStore {
   get<T>(key: string): T | undefined;
-  set<T>(key: string, value: T, ttl: number): void;
+  getStale?<T>(key: string): CacheEntry<T> | undefined;
+  set<T>(key: string, value: T, ttl: number, metadata?: CacheEntryMetadata): void;
   has(key: string): boolean;
   delete(key: string): boolean;
   clear(): void;

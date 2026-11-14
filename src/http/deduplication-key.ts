@@ -21,5 +21,6 @@ export function createDeduplicationKey(
     cache.enabled,
     cache.policy,
     cache.ttl,
+    cache.revalidate ?? false,
   ]);
 }

@@ -35,6 +35,7 @@ export type {
   ClientCacheOptions,
   CacheRequestOptions,
   CacheStore,
+  CacheEntryMetadata,
   MemoryCacheOptions,
 } from "./http/cache-types.js";
 export type { CacheController } from "./http/cache.js";

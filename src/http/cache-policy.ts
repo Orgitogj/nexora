@@ -4,6 +4,7 @@ export interface ResolvedCacheOptions {
   enabled: boolean;
   ttl: number;
   policy: CachePolicy;
+  revalidate: boolean;
   key?: string;
   tags: readonly string[];
 }
@@ -25,6 +26,10 @@ export function resolveCacheOptions(
     requestOptions === false
       ? (globalOptions?.policy ?? "cache-first")
       : (requestOptions?.policy ?? globalOptions?.policy ?? "cache-first");
+  const revalidate =
+    requestOptions === false
+      ? (globalOptions?.revalidate ?? false)
+      : (requestOptions?.revalidate ?? globalOptions?.revalidate ?? false);
   const key = requestOptions === false ? undefined : requestOptions?.key;
   const requestedTags = requestOptions === false ? [] : (requestOptions?.tags ?? []);
   if (
@@ -34,5 +39,5 @@ export function resolveCacheOptions(
     throw new TypeError("Cache tags must be non-empty strings");
   }
   const tags = [...new Set(requestedTags)];
-  return { enabled, ttl, policy, tags, ...(key === undefined ? {} : { key }) };
+  return { enabled, ttl, policy, revalidate, tags, ...(key === undefined ? {} : { key }) };
 }

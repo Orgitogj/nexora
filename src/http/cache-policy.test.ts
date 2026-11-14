@@ -246,6 +246,140 @@ describe("Cache policy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("revalidates stale ETag responses and returns the cached representation for 304", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          jsonResponse({ id: 1 }, { headers: { "Cache-Control": "max-age=0", ETag: '"user-v1"' } }),
+        ),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          new Response(null, { status: 304, headers: { "Cache-Control": "max-age=60" } }),
+        ),
+      );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true, revalidate: true },
+      credentials: "omit",
+    });
+
+    await expect(client.get("/users/1")).resolves.toEqual({ id: 1 });
+    await expect(client.get("/users/1")).resolves.toEqual({ id: 1 });
+
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).has("If-None-Match")).toBe(false);
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("If-None-Match")).toBe(
+      '"user-v1"',
+    );
+  });
+
+  it("sends Last-Modified and replaces validators after a revalidated representation changes", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          jsonResponse(
+            { id: 1, name: "First" },
+            {
+              headers: {
+                "Cache-Control": "max-age=0",
+                "Last-Modified": "Tue, 10 Nov 2026 10:00:00 GMT",
+              },
+            },
+          ),
+        ),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          jsonResponse(
+            { id: 1, name: "Updated" },
+            { headers: { "Cache-Control": "max-age=0", ETag: '"user-v2"' } },
+          ),
+        ),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          new Response(null, { status: 304, headers: { "Cache-Control": "max-age=60" } }),
+        ),
+      );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true, revalidate: true },
+      credentials: "omit",
+    });
+
+    await expect(client.get("/users/1")).resolves.toEqual({ id: 1, name: "First" });
+    await expect(client.get("/users/1")).resolves.toEqual({ id: 1, name: "Updated" });
+    await expect(client.get("/users/1")).resolves.toEqual({ id: 1, name: "Updated" });
+
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("If-Modified-Since")).toBe(
+      "Tue, 10 Nov 2026 10:00:00 GMT",
+    );
+    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("If-None-Match")).toBe(
+      '"user-v2"',
+    );
+  });
+
+  it("retains validators until the configured cache TTL after server freshness expires", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-07T12:00:00Z"));
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          jsonResponse({ id: 1 }, { headers: { "Cache-Control": "max-age=1", ETag: '"user-v1"' } }),
+        ),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          new Response(null, { status: 304, headers: { "Cache-Control": "max-age=5" } }),
+        ),
+      );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true, revalidate: true, ttl: 10_000 },
+      credentials: "omit",
+    });
+
+    await client.get("/users/1");
+    vi.advanceTimersByTime(1_001);
+    await expect(client.get("/users/1")).resolves.toEqual({ id: 1 });
+
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("If-None-Match")).toBe(
+      '"user-v1"',
+    );
+  });
+
+  it("removes a cached representation when revalidation returns no-store", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          jsonResponse({ id: 1 }, { headers: { "Cache-Control": "max-age=0", ETag: '"user-v1"' } }),
+        ),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          new Response(null, { status: 304, headers: { "Cache-Control": "no-store" } }),
+        ),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(jsonResponse({ id: 2 }, { headers: { "Cache-Control": "max-age=60" } })),
+      );
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true, revalidate: true },
+      credentials: "omit",
+    });
+
+    await client.get("/users/1");
+    await client.get("/users/1");
+    await expect(client.get("/users/1")).resolves.toEqual({ id: 2 });
+
+    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).has("If-None-Match")).toBe(false);
+  });
+
   it("expires cached values when the server max-age is reached", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-07T12:00:00Z"));

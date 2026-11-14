@@ -1,4 +1,9 @@
-import type { CacheEntry, CacheStore, MemoryCacheOptions } from "./cache-types.js";
+import type {
+  CacheEntry,
+  CacheEntryMetadata,
+  CacheStore,
+  MemoryCacheOptions,
+} from "./cache-types.js";
 
 function cloneValue<T>(value: T): T {
   if (typeof globalThis.structuredClone === "function") {
@@ -91,6 +96,22 @@ export function createMemoryCache(options: MemoryCacheOptions = {}): CacheStore 
     for (const key of entries.keys()) validEntry(key);
   }
 
+  function cloneEntry<T>(entry: CacheEntry): CacheEntry<T> {
+    return {
+      value: cloneValue(entry.value as T),
+      expiresAt: entry.expiresAt,
+      ...(entry.metadata === undefined
+        ? {}
+        : {
+            metadata: {
+              headers: entry.metadata.headers.map(([name, value]) => [name, value] as const),
+              requiresRevalidation: entry.metadata.requiresRevalidation,
+              retainUntil: entry.metadata.retainUntil,
+            },
+          }),
+    };
+  }
+
   return {
     get<T>(key: string): T | undefined {
       const entry = validEntry(key);
@@ -99,7 +120,22 @@ export function createMemoryCache(options: MemoryCacheOptions = {}): CacheStore 
       entries.set(key, entry);
       return cloneValue(entry.value as T);
     },
-    set<T>(key: string, value: T, ttl: number): void {
+    getStale<T>(key: string): CacheEntry<T> | undefined {
+      const entry = entries.get(key);
+      if (entry === undefined) return undefined;
+      if (
+        entry.metadata?.retainUntil === undefined
+          ? Date.now() >= entry.expiresAt
+          : Date.now() >= entry.metadata.retainUntil
+      ) {
+        entries.delete(key);
+        return undefined;
+      }
+      entries.delete(key);
+      entries.set(key, entry);
+      return cloneEntry<T>(entry);
+    },
+    set<T>(key: string, value: T, ttl: number, metadata?: CacheEntryMetadata): void {
       if (!Number.isFinite(ttl) || ttl < 0) {
         throw new RangeError("Cache TTL must be a finite non-negative number");
       }
@@ -114,7 +150,11 @@ export function createMemoryCache(options: MemoryCacheOptions = {}): CacheStore 
         const leastRecentlyUsedKey = entries.keys().next().value;
         if (leastRecentlyUsedKey !== undefined) entries.delete(leastRecentlyUsedKey);
       }
-      entries.set(key, { value: clonedValue, expiresAt: Date.now() + ttl });
+      entries.set(key, {
+        value: clonedValue,
+        expiresAt: Date.now() + ttl,
+        ...(metadata === undefined ? {} : { metadata }),
+      });
     },
     has(key: string): boolean {
       return validEntry(key) !== undefined;
