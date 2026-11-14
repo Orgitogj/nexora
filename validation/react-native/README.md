@@ -2,7 +2,7 @@
 
 This bare React Native Community CLI app runs under Hermes and imports Nexora from a packed npm archive through Metro. It contains native checks for package exports, cookie omission and cache isolation, managed bearer-token redirects, request cancellation, retry-delay cancellation, response-body cancellation, and the `structuredClone` fallback.
 
-The fixture is pinned to React Native 0.86.3, the proposed minimum validation target. A current-release matrix has not yet been generated or run. Record the exact React Native, Hermes, Metro, OS, device, and build-mode versions with each result. A successful Node/Vitest run or bundle build is not evidence of native compatibility. Run `npm run check` from the repository root to type-check and lint fixture sources alongside Nexora.
+The fixture is pinned to React Native 0.86.3, the proposed minimum validation target. A current-release matrix has not yet been generated or run. Record the exact React Native, Hermes, Metro, OS, device, and build-mode versions with each result. A successful Node/Vitest run or bundle build is not evidence of native compatibility. Run `npm test` from this directory to type-check the fixture sources; the root `npm run check` does not lint this directory, because it has its own dependencies.
 
 ## Requirements
 
