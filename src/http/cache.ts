@@ -1,6 +1,6 @@
 ﻿import { NexoraCacheMissError } from "./cache-errors.js";
 import { createMemoryCache } from "./cache-store.js";
-import type { CacheStore } from "./cache-types.js";
+import type { CacheEntryMetadata, CacheStore } from "./cache-types.js";
 
 export interface CacheController {
   get<T>(key: string): T | undefined;
@@ -111,9 +111,15 @@ export function createCacheController(store: CacheStore = createMemoryCache()) {
   return {
     controller,
     store,
-    set<T>(key: string, value: T, ttl: number, tags: readonly string[] = []): void {
+    set<T>(
+      key: string,
+      value: T,
+      ttl: number,
+      tags: readonly string[] = [],
+      metadata?: CacheEntryMetadata,
+    ): void {
       validateTags(tags);
-      store.set(key, value, ttl);
+      store.set(key, value, ttl, metadata);
       pruneStaleKeys();
       addKeyTags(key, tags);
     },
