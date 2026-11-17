@@ -31,6 +31,87 @@ describe("Cache policy", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe("omit");
   });
 
+  it("bypasses a cached response when a validator is provided", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse({ id: 1 })))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse({ id: 2 })));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+    const validate = vi.fn((value: unknown) => value as { id: number });
+
+    await client.get("/users/1");
+    await expect(client.get("/users/1", { validate })).resolves.toEqual({ id: 2 });
+
+    expect(validate).toHaveBeenCalledOnce();
+    expect(validate).toHaveBeenCalledWith({ id: 2 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not write validated GET responses to the cache", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(jsonResponse({ id: 1 })));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+
+    await expect(
+      client.get("/users/1", { validate: (value) => value as { id: number } }),
+    ).resolves.toEqual({ id: 1 });
+
+    expect(client.cache.keys()).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not use a network-first cache fallback when a validator is provided", async () => {
+    const networkError = new TypeError("offline");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse({ id: 1 })))
+      .mockRejectedValueOnce(networkError);
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+      retry: { maxRetries: 0 },
+    });
+
+    await client.get("/users/1");
+    await expect(
+      client.get("/users/1", {
+        cache: { policy: "network-first" },
+        validate: (value) => value as { id: number },
+      }),
+    ).rejects.toBe(networkError);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not make a network request for cache-only GETs with a validator", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(jsonResponse({ id: 1 })));
+    const client = createClient({
+      baseUrl: "https://api.example.test",
+      cache: { enabled: true },
+      credentials: "omit",
+    });
+    const validate = vi.fn((value: unknown) => value as { id: number });
+
+    await expect(
+      client.get("/users/1", { cache: { policy: "cache-only" }, validate }),
+    ).rejects.toMatchObject({ name: "NexoraCacheMissError" });
+
+    expect(validate).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("does not cache POST requests", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
