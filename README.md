@@ -10,8 +10,22 @@ It is tested with Vitest on Node. Behaviour on React Native/Hermes has **not bee
 
 ## Install
 
+The `nexora` package name is registered on npm by a different project. Build a tarball from this
+repository, then install that file in the consuming project.
+
+From this repository:
+
 ```sh
-npm install @orgitogj/nexora
+npm ci
+npm run build
+npm pack
+# creates nexora-0.1.0.tgz
+```
+
+From the consuming project:
+
+```sh
+npm install ../nexora/nexora-0.1.0.tgz
 ```
 
 Requires a runtime with the standard `fetch`, `Headers`, `Response` and `AbortController` APIs.
@@ -19,7 +33,7 @@ Requires a runtime with the standard `fetch`, `Headers`, `Response` and `AbortCo
 ## Quick start
 
 ```ts
-import { createClient } from "@orgitogj/nexora";
+import { createClient } from "nexora";
 
 const api = createClient({
   baseUrl: "https://api.example.com/v1",
@@ -88,7 +102,7 @@ The token is sent as a `Bearer` token. On a `401` response the client calls `ref
 Non-2xx responses throw a `NexoraError` with `status`, `statusText` and the parsed `data`.
 
 ```ts
-import { NexoraError } from "@orgitogj/nexora";
+import { NexoraError } from "nexora";
 
 try {
   await api.get("/users/1");
@@ -138,7 +152,7 @@ The in-memory cache uses the native `structuredClone` when available. Runtimes w
 Requirements: Node.js 22.12 or newer.
 
 ```sh
-npm install           # install dev dependencies
+npm ci                # install dev dependencies from the lockfile
 npm run build         # compile src/ to dist/ (JS, .d.ts, source maps)
 npm run typecheck     # type-check src/ and tests/ without emitting
 npm run test          # run the test suite once (Vitest)
