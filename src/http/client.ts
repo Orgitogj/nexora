@@ -97,6 +97,7 @@ export function createClient(options: ClientOptions) {
       const cacheOptions = resolveCacheOptions(options.cache, requestOptions.cache);
       const canCache =
         cacheOptions.enabled &&
+        requestOptions.validate === undefined &&
         cacheOptions.policy !== "no-store" &&
         requestOptions.method === "GET" &&
         context.init.method?.toUpperCase() === "GET" &&
