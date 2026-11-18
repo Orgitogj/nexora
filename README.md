@@ -10,22 +10,10 @@ It is tested with Vitest on Node. Behaviour on React Native/Hermes has **not bee
 
 ## Install
 
-The `nexora` package name is registered on npm by a different project. Build a tarball from this
-repository, then install that file in the consuming project.
-
-From this repository:
+Install the public npm package:
 
 ```sh
-npm ci
-npm run build
-npm pack
-# creates nexora-0.1.0.tgz
-```
-
-From the consuming project:
-
-```sh
-npm install ../nexora/nexora-0.1.0.tgz
+npm install nexora-http
 ```
 
 Requires a runtime with the standard `fetch`, `Headers`, `Response` and `AbortController` APIs.
@@ -33,7 +21,7 @@ Requires a runtime with the standard `fetch`, `Headers`, `Response` and `AbortCo
 ## Quick start
 
 ```ts
-import { createClient } from "nexora";
+import { createClient } from "nexora-http";
 
 const api = createClient({
   baseUrl: "https://api.example.com/v1",
